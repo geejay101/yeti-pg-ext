@@ -1,17 +1,15 @@
 #include "exported_functions.h"
 #include "log.h"
+#include "f_process_templates.h"
 
 #include <utils/builtins.h>
 #include <utils/array.h>
-#include <utils/jsonb.h>
 #include <catalog/pg_type.h>
 
 #include <string.h>
 
 #define LOG_PREFIX "process_templates: "
 #define INITIAL_BUF_SIZE 64
-
-Datum replace_placeholders(Datum tpl, Jsonb *values);
 
 PG_FUNCTION_INFO_V1(process_templates);
 Datum process_templates(PG_FUNCTION_ARGS)

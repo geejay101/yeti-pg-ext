@@ -2,6 +2,8 @@
 #include "replace_rand.h"
 #include "log.h"
 
+#include "f_process_templates.h"
+
 #include <catalog/pg_type.h>
 #include <utils/builtins.h>
 #include <utils/array.h>
@@ -23,6 +25,9 @@
 
 #define OPT_ARG_KEEP_EMPTY 4
 #define NOOPT_ARG_KEEP_EMPTY 3
+
+#define OPT_ARG_VARS 5
+#define NOOPT_ARG_VARS 4
 
 #if PGVER > 904
 #define GET_ARRAY_ITERATOR(a) array_create_iterator(a,0,NULL);
@@ -157,11 +162,12 @@ static Datum apply_textregexreplace_noopt(PG_FUNCTION_ARGS, bool *matched, bool 
 PG_FUNCTION_INFO_V1(regexp_replace_rand_noopt);
 Datum regexp_replace_rand_noopt(PG_FUNCTION_ARGS)
 {
-	Datum ret;
+	Datum ret = 0, tmp;
 	text *t;
 	bool replaced;
 	bool matched;
 	bool keep_empty = false;
+	Jsonb *values;
 
 	const char *rule_ptr, *rule_token_pos, *rule_end,
 			   *result_ptr, *result_token_pos, *result_end;
@@ -175,12 +181,12 @@ Datum regexp_replace_rand_noopt(PG_FUNCTION_ARGS)
 
 	if(PG_ARGISNULL(ARG_RULE)){
 		dbg("rule is null. return input");
-		return get_in_copy(fcinfo);
+		goto out_nocleanup;
 	}
 
 	if(PG_ARGISNULL(ARG_RESULT)){
 		dbg("result is null. return input");
-		return get_in_copy(fcinfo);
+		goto out_nocleanup;
 	}
 
 	if(PG_NARGS() > NOOPT_ARG_KEEP_EMPTY && !PG_ARGISNULL(NOOPT_ARG_KEEP_EMPTY))
@@ -193,13 +199,13 @@ Datum regexp_replace_rand_noopt(PG_FUNCTION_ARGS)
 
 	if(VARSIZE_ANY_EXHDR(PG_GETARG_DATUM(ARG_RULE))==0){
 		dbg("rule is empty. return input");
-		return get_in_copy(fcinfo);
+		goto out_nocleanup;
 	}
 
 	t = replace(PG_GETARG_TEXT_P(ARG_RESULT),&replaced);
 	if(!t) {
 		dbg("replace failed. return input");
-		return get_in_copy(fcinfo);
+		goto out_nocleanup;
 	}
 
 	if(replaced) {
@@ -278,7 +284,19 @@ out:
 	if(rule_chunk) pfree(rule_chunk);
 	if(result_chunk) pfree(result_chunk);
 
+out_nocleanup:
 	if(!ret) ret = get_in_copy(fcinfo);
+
+	if(PG_NARGS() > NOOPT_ARG_VARS &&
+		!PG_ARGISNULL(NOOPT_ARG_VARS))
+	{
+		values = PG_GETARG_JSONB_P(NOOPT_ARG_VARS);
+		if(JsonContainerIsObject(&values->root)) {
+			tmp = replace_placeholders(ret, values);
+			pfree(DatumGetPointer(ret));
+			return tmp;
+		}
+	}
 
 	return ret;
 }
@@ -286,11 +304,12 @@ out:
 PG_FUNCTION_INFO_V1(regexp_replace_rand);
 Datum regexp_replace_rand(PG_FUNCTION_ARGS)
 {
-	Datum ret;
+	Datum ret, tmp;
 	text *t;
 	ErrorData *e;
 	bool replaced;
 	bool keep_empty = false;
+	Jsonb *values;
 
 	if(PG_ARGISNULL(ARG_IN)) {
 		dbg("input is null. return null");
@@ -299,7 +318,8 @@ Datum regexp_replace_rand(PG_FUNCTION_ARGS)
 
 	if(PG_ARGISNULL(ARG_RULE)){
 		dbg("rule is null. return input");
-		return get_in_copy(fcinfo);
+		ret = get_in_copy(fcinfo);
+		goto out;
 	}
 
 	if(PG_ARGISNULL(ARG_OPT)) {
@@ -309,7 +329,8 @@ Datum regexp_replace_rand(PG_FUNCTION_ARGS)
 
 	if(PG_ARGISNULL(ARG_RESULT)){
 		dbg("result is null. return input");
-		return get_in_copy(fcinfo);
+		ret = get_in_copy(fcinfo);
+		goto out;
 	}
 
 	/*if(VARSIZE(PG_GETARG_DATUM(ARG_IN))==VARHDRSZ){
@@ -319,7 +340,8 @@ Datum regexp_replace_rand(PG_FUNCTION_ARGS)
 
 	if(VARSIZE_ANY_EXHDR(PG_GETARG_DATUM(ARG_RULE))==0){
 		dbg("rule is empty. return input");
-		return get_in_copy(fcinfo);
+		ret = get_in_copy(fcinfo);
+		goto out;
 	}
 
 	if(PG_NARGS() > OPT_ARG_KEEP_EMPTY && !PG_ARGISNULL(OPT_ARG_KEEP_EMPTY))
@@ -328,7 +350,8 @@ Datum regexp_replace_rand(PG_FUNCTION_ARGS)
 	t = replace(PG_GETARG_TEXT_P(ARG_RESULT),&replaced);
 	if(!t) {
 		dbg("replace failed. return input");
-		return get_in_copy(fcinfo);
+		ret = get_in_copy(fcinfo);
+		goto out;
 	}
 
 	if(replaced) {
@@ -359,6 +382,17 @@ Datum regexp_replace_rand(PG_FUNCTION_ARGS)
 	PG_END_TRY();
 
 	if(replaced) pfree(t);
+out:
+	if(PG_NARGS() > OPT_ARG_VARS &&
+		!PG_ARGISNULL(OPT_ARG_VARS))
+	{
+		values = PG_GETARG_JSONB_P(OPT_ARG_VARS);
+		if(JsonContainerIsObject(&values->root)) {
+			tmp = replace_placeholders(ret, values);
+			pfree(DatumGetPointer(ret));
+			return tmp;
+		}
+	}
 
 	return ret;
 }
@@ -366,11 +400,12 @@ Datum regexp_replace_rand(PG_FUNCTION_ARGS)
 PG_FUNCTION_INFO_V1(regexp_replace_rand_array_noopt);
 Datum regexp_replace_rand_array_noopt(PG_FUNCTION_ARGS)
 {
-	Datum ret, v;
+	Datum ret, tmp, v;
 	ArrayType *in;
 	ArrayIterator it;
 	text *t;
 	ArrayBuildState *array_state;
+	Jsonb *values = 0;
 
 	bool replaced, matched, inserted, is_null;
 	bool keep_empty = false;
@@ -428,6 +463,15 @@ Datum regexp_replace_rand_array_noopt(PG_FUNCTION_ARGS)
 	result_end = result_begin_ptr + VARSIZE_ANY_EXHDR(PG_GETARG_TEXT_P(ARG_RESULT));
 	result_chunk = 0;
 
+	if(PG_NARGS() > NOOPT_ARG_VARS &&
+		!PG_ARGISNULL(NOOPT_ARG_VARS))
+	{
+		values = PG_GETARG_JSONB_P(NOOPT_ARG_VARS);
+		if(!JsonContainerIsObject(&values->root)) {
+			values = 0;
+		}
+	}
+
 	//iterate over input array
 	while(array_iterate(it,&v,&is_null)) {
 
@@ -449,7 +493,7 @@ Datum regexp_replace_rand_array_noopt(PG_FUNCTION_ARGS)
 		inserted = false;
 
 		if(ret) {
-			pfree((Pointer)ret);
+			pfree(DatumGetPointer(ret));
 			ret = 0;
 		}
 
@@ -463,6 +507,11 @@ Datum regexp_replace_rand_array_noopt(PG_FUNCTION_ARGS)
 					replace_arg(fcinfo, ARG_RESULT, result_chunk, result_ptr, result_end);
 				}
 				ret = apply_textregexreplace_noopt(fcinfo,&matched,false,keep_empty);
+				if(values) {
+					tmp = replace_placeholders(ret ? ret : v, values);
+					if(ret) pfree(DatumGetPointer(ret));
+					ret = tmp;
+				}
 				array_state = accumArrayResult(
 					array_state,
 					ret ? ret : v, false, TEXTOID,
@@ -475,6 +524,11 @@ Datum regexp_replace_rand_array_noopt(PG_FUNCTION_ARGS)
 
 			ret = apply_textregexreplace_noopt(fcinfo,&matched,false,keep_empty);
 			if(matched) {
+				if(values) {
+					tmp = replace_placeholders(ret ? ret : v, values);
+					if(ret) pfree(DatumGetPointer(ret));
+					ret = tmp;
+				}
 				array_state = accumArrayResult(
 					array_state,
 					ret ? ret : v, false, TEXTOID,
@@ -513,6 +567,11 @@ Datum regexp_replace_rand_array_noopt(PG_FUNCTION_ARGS)
 				}
 			}
 			ret = apply_textregexreplace_noopt(fcinfo,&matched,false,keep_empty);
+			if(values) {
+				tmp = replace_placeholders(ret ? ret : v, values);
+				if(ret) pfree(DatumGetPointer(ret));
+				ret = tmp;
+			}
 			array_state = accumArrayResult(
 				array_state,
 				ret ? ret : v, false, TEXTOID,
@@ -520,6 +579,7 @@ Datum regexp_replace_rand_array_noopt(PG_FUNCTION_ARGS)
 		}
 	}
 
+	if(ret) pfree(DatumGetPointer(ret));
 	if(replaced) pfree(t);
 	if(rule_chunk) pfree(rule_chunk);
 	if(result_chunk) pfree(result_chunk);
