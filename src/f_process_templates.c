@@ -92,7 +92,8 @@ Datum replace_placeholders(Datum tpl, Jsonb *values)
     char *tmp, *serialized_num;
 
     JsonbContainer *j = &values->root;
-    JsonbValue v, *v_ptr;
+    const JsonbValue *v_ptr;
+    JsonbValue v;
 
     StringInfoData sinfo;
 

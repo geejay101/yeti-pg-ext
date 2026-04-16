@@ -24,8 +24,9 @@ CREATE FUNCTION test_regexp_replace_rand_text_text_text_boolean_jsonb() RETURNS 
     -- template replacements
     RETURN NEXT is(regexp_replace_rand('a','a','{{vars.answer}}', false, '{"answer":42}'), '42', 'valid regexp_replace. no rand. single template');
     RETURN NEXT matches(regexp_replace_rand('a','a','{{vars.answer}}xr(4)', false, '{"answer":42}'), '^42x\d{4}$', 'valid regexp_replace. with rand. single template var');
-    RETURN NEXT matches(regexp_replace_rand('a{{vars.qwe}}','a','{{vars.answer}}.{{vars.s}}.r(4)', false, '{"answer":42, "s": "somestring", "qwe":33}'), '^42\.somestring\.\d{4}33$', 'valid regexp_replace. with rand. multiple templates vars');
-    RETURN NEXT is(regexp_replace_rand('a{{vars.qwe}}','b','\1', false, '{"qwe":33}'), 'a33', 'valid not matched regexp_replace. multiple templates vars');
+    RETURN NEXT matches(regexp_replace_rand('a{{vars.qwe}}','a','{{vars.answer}}.{{vars.s}}.r(4)', false, '{"answer":42, "s": "somestring", "qwe":33}'), '^42\.somestring\.\d{4}{{vars.qwe}}$', 'valid regexp_replace. with rand. multiple templates vars');
+    RETURN NEXT is(regexp_replace_rand('a{{vars.qwe}}','b','\1', false, '{"qwe":33}'), 'a{{vars.qwe}}', 'ensure input placeholders are ignored');
+    RETURN NEXT is(regexp_replace_rand('b','({{vars.rule}})','x\1{{vars.qwe}}', false, '{"rule":"b","qwe":33}'), 'xb33', 'replace with placeholder in the rule');
 END; $$ LANGUAGE plpgsql;
 
 -- regexp_replace_rand: text_in text, regexp_rule text, regexp_result text, regexp_opt text, keep_empty boolean DEFAULT false, vars jsonb DEFAULT NULL::jsonb
@@ -46,7 +47,7 @@ CREATE FUNCTION test_regexp_replace_rand_text_text_text_text_boolean_jsonb() RET
     RETURN NEXT is(regexp_replace_rand('a','a','b', '', false), 'b', 'empty opt');
 
     -- templates
-    RETURN NEXT is(regexp_replace_rand('a{{vars.v1}}','a','b{{vars.v2}}', '', false, '{"v1":1, "v2":2}'), 'b21', 'empty opt. template vars');
+    RETURN NEXT is(regexp_replace_rand('a{{vars.v1}}','a','b{{vars.v2}}', '', false, '{"v1":1, "v2":2}'), 'b2{{vars.v1}}', 'empty opt. template vars');
 END; $$ LANGUAGE plpgsql;
 
 -- regexp_replace_rand: text_in text[], regexp_rule text, regexp_result text, keep_empty boolean DEFAULT false, vars jsonb DEFAULT NULL::jsonb
@@ -86,7 +87,7 @@ BEGIN
             false,                                      -- keep_empty
             '{"v1": 42, "v2": 99, "v3": 33}'            -- template vars
         ),
-        array['q*42we','rt^99y','asd.33'],
+        array['q*42we','rt^99y','asd.{{vars.v3}}'],
         'multi-in, multi-token. template vars');
 END; $$ LANGUAGE plpgsql;
 

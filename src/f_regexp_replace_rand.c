@@ -162,8 +162,8 @@ static Datum apply_textregexreplace_noopt(PG_FUNCTION_ARGS, bool *matched, bool 
 PG_FUNCTION_INFO_V1(regexp_replace_rand_noopt);
 Datum regexp_replace_rand_noopt(PG_FUNCTION_ARGS)
 {
-	Datum ret = 0, tmp;
-	text *t;
+	Datum ret = 0, tmp = 0, orig_rule = 0, orig_result = 0;
+	text *t = 0;
 	bool replaced;
 	bool matched;
 	bool keep_empty = false;
@@ -211,7 +211,29 @@ Datum regexp_replace_rand_noopt(PG_FUNCTION_ARGS)
 	if(replaced) {
 		/* modify fcinfo to call regexp_replace()
 		* replace pointer to the result field */
+		orig_result =  PG_GETARG_DATUM(ARG_RESULT);
 		PG_GETARG_DATUM(ARG_RESULT) = PointerGetDatum(t);
+	}
+
+	if(PG_NARGS() > NOOPT_ARG_VARS &&
+		!PG_ARGISNULL(NOOPT_ARG_VARS))
+	{
+		values = PG_GETARG_JSONB_P(NOOPT_ARG_VARS);
+		if(JsonContainerIsObject(&values->root)) {
+			//replace ARG_RESULT
+			tmp = replace_placeholders(PG_GETARG_DATUM(ARG_RESULT), values);
+			if(replaced) {
+				pfree(PG_GETARG_POINTER(ARG_RESULT));
+			} else {
+				orig_result = PG_GETARG_DATUM(ARG_RESULT);
+			}
+			PG_GETARG_DATUM(ARG_RESULT) = tmp;
+
+			//replace ARG_RULE
+			orig_rule =  PG_GETARG_DATUM(ARG_RULE);
+			tmp = replace_placeholders(orig_rule, values);
+			PG_GETARG_DATUM(ARG_RULE) = tmp;
+		}
 	}
 
 	rule_ptr = (const char *)VARDATA_ANY(PG_GETARG_TEXT_P(ARG_RULE));
@@ -280,23 +302,21 @@ Datum regexp_replace_rand_noopt(PG_FUNCTION_ARGS)
 	ret = apply_textregexreplace_noopt(fcinfo,&matched,true,keep_empty);
 
 out:
-	if(replaced) pfree(t);
 	if(rule_chunk) pfree(rule_chunk);
 	if(result_chunk) pfree(result_chunk);
 
+	//restore fcinfo
+	if(orig_rule) {
+		pfree(PG_GETARG_POINTER(ARG_RULE));
+		PG_GETARG_DATUM(ARG_RULE) = orig_rule;
+	}
+	if(orig_result) {
+		pfree(PG_GETARG_POINTER(ARG_RESULT));
+		PG_GETARG_DATUM(ARG_RESULT) = orig_result;
+	}
+
 out_nocleanup:
 	if(!ret) ret = get_in_copy(fcinfo);
-
-	if(PG_NARGS() > NOOPT_ARG_VARS &&
-		!PG_ARGISNULL(NOOPT_ARG_VARS))
-	{
-		values = PG_GETARG_JSONB_P(NOOPT_ARG_VARS);
-		if(JsonContainerIsObject(&values->root)) {
-			tmp = replace_placeholders(ret, values);
-			pfree(DatumGetPointer(ret));
-			return tmp;
-		}
-	}
 
 	return ret;
 }
@@ -304,8 +324,8 @@ out_nocleanup:
 PG_FUNCTION_INFO_V1(regexp_replace_rand);
 Datum regexp_replace_rand(PG_FUNCTION_ARGS)
 {
-	Datum ret, tmp;
-	text *t;
+	Datum ret = 0, tmp = 0, orig_rule = 0, orig_result = 0;
+	text *t = 0;
 	ErrorData *e;
 	bool replaced;
 	bool keep_empty = false;
@@ -357,7 +377,29 @@ Datum regexp_replace_rand(PG_FUNCTION_ARGS)
 	if(replaced) {
 		/* modify fcinfo to call regexp_replace()
 		* replace pointer to the result field */
+		orig_result =  PG_GETARG_DATUM(ARG_RESULT);
 		PG_GETARG_DATUM(ARG_RESULT) = PointerGetDatum(t);
+	}
+
+	if(PG_NARGS() > OPT_ARG_VARS &&
+		!PG_ARGISNULL(OPT_ARG_VARS))
+	{
+		values = PG_GETARG_JSONB_P(OPT_ARG_VARS);
+		if(JsonContainerIsObject(&values->root)) {
+			//replace ARG_RESULT
+			tmp = replace_placeholders(PG_GETARG_DATUM(ARG_RESULT), values);
+			if(replaced) {
+				pfree(PG_GETARG_POINTER(ARG_RESULT));
+			} else {
+				orig_result = PG_GETARG_DATUM(ARG_RESULT);
+			}
+			PG_GETARG_DATUM(ARG_RESULT) = tmp;
+
+			//replace ARG_RULE
+			orig_rule =  PG_GETARG_DATUM(ARG_RULE);
+			tmp = replace_placeholders(orig_rule, values);
+			PG_GETARG_DATUM(ARG_RULE) = tmp;
+		}
 	}
 
 	//call regexp_replace() catching exceptions
@@ -381,27 +423,24 @@ Datum regexp_replace_rand(PG_FUNCTION_ARGS)
 		ret = get_in_copy(fcinfo);
 	PG_END_TRY();
 
-	if(replaced) pfree(t);
-out:
-	if(PG_NARGS() > OPT_ARG_VARS &&
-		!PG_ARGISNULL(OPT_ARG_VARS))
-	{
-		values = PG_GETARG_JSONB_P(OPT_ARG_VARS);
-		if(JsonContainerIsObject(&values->root)) {
-			tmp = replace_placeholders(ret, values);
-			pfree(DatumGetPointer(ret));
-			return tmp;
-		}
+	//restore fcinfo
+	if(orig_rule) {
+		pfree(PG_GETARG_POINTER(ARG_RULE));
+		PG_GETARG_DATUM(ARG_RULE) = orig_rule;
 	}
-
+	if(orig_result) {
+		pfree(PG_GETARG_POINTER(ARG_RESULT));
+		PG_GETARG_DATUM(ARG_RESULT) = orig_result;
+	}
+out:
 	return ret;
 }
 
 PG_FUNCTION_INFO_V1(regexp_replace_rand_array_noopt);
 Datum regexp_replace_rand_array_noopt(PG_FUNCTION_ARGS)
 {
-	Datum ret, tmp, v;
-	ArrayType *in;
+	Datum v, ret = 0, tmp = 0, orig_in, orig_rule = 0, orig_result = 0;
+	//ArrayType *in;
 	ArrayIterator it;
 	text *t;
 	ArrayBuildState *array_state;
@@ -447,11 +486,35 @@ Datum regexp_replace_rand_array_noopt(PG_FUNCTION_ARGS)
 	if(replaced) {
 		/* modify fcinfo to call regexp_replace()
 		* replace pointer to the result field */
+		orig_result =  PG_GETARG_DATUM(ARG_RESULT);
 		PG_GETARG_DATUM(ARG_RESULT) = PointerGetDatum(t);
 	}
 
-	in = PG_GETARG_ARRAYTYPE_P(ARG_IN);
-	it = GET_ARRAY_ITERATOR(in);
+	if(PG_NARGS() > NOOPT_ARG_VARS &&
+		!PG_ARGISNULL(NOOPT_ARG_VARS))
+	{
+		values = PG_GETARG_JSONB_P(NOOPT_ARG_VARS);
+		if(JsonContainerIsObject(&values->root)) {
+			//replace ARG_RESULT
+			tmp = replace_placeholders(PG_GETARG_DATUM(ARG_RESULT), values);
+			if(replaced) {
+				pfree(PG_GETARG_POINTER(ARG_RESULT));
+			} else {
+				orig_result = PG_GETARG_DATUM(ARG_RESULT);
+			}
+			PG_GETARG_DATUM(ARG_RESULT) = tmp;
+
+			//replace ARG_RULE
+			orig_rule =  PG_GETARG_DATUM(ARG_RULE);
+			tmp = replace_placeholders(orig_rule, values);
+			PG_GETARG_DATUM(ARG_RULE) = tmp;
+		}
+	}
+
+	orig_in = PG_GETARG_DATUM(ARG_IN);
+	//in = PG_GETARG_ARRAYTYPE_P(orig_in);
+	//it = GET_ARRAY_ITERATOR(PG_GETARG_ARRAYTYPE_P(orig_in));
+	it = GET_ARRAY_ITERATOR(DatumGetArrayTypeP(orig_in));
 	array_state = initArrayResult(TEXTOID, CurrentMemoryContext, false);
 	ret = 0;
 
@@ -462,15 +525,6 @@ Datum regexp_replace_rand_array_noopt(PG_FUNCTION_ARGS)
 	result_begin_ptr = (const char *)VARDATA_ANY(PG_GETARG_TEXT_P(ARG_RESULT));
 	result_end = result_begin_ptr + VARSIZE_ANY_EXHDR(PG_GETARG_TEXT_P(ARG_RESULT));
 	result_chunk = 0;
-
-	if(PG_NARGS() > NOOPT_ARG_VARS &&
-		!PG_ARGISNULL(NOOPT_ARG_VARS))
-	{
-		values = PG_GETARG_JSONB_P(NOOPT_ARG_VARS);
-		if(!JsonContainerIsObject(&values->root)) {
-			values = 0;
-		}
-	}
 
 	//iterate over input array
 	while(array_iterate(it,&v,&is_null)) {
@@ -507,11 +561,6 @@ Datum regexp_replace_rand_array_noopt(PG_FUNCTION_ARGS)
 					replace_arg(fcinfo, ARG_RESULT, result_chunk, result_ptr, result_end);
 				}
 				ret = apply_textregexreplace_noopt(fcinfo,&matched,false,keep_empty);
-				if(values) {
-					tmp = replace_placeholders(ret ? ret : v, values);
-					if(ret) pfree(DatumGetPointer(ret));
-					ret = tmp;
-				}
 				array_state = accumArrayResult(
 					array_state,
 					ret ? ret : v, false, TEXTOID,
@@ -524,11 +573,6 @@ Datum regexp_replace_rand_array_noopt(PG_FUNCTION_ARGS)
 
 			ret = apply_textregexreplace_noopt(fcinfo,&matched,false,keep_empty);
 			if(matched) {
-				if(values) {
-					tmp = replace_placeholders(ret ? ret : v, values);
-					if(ret) pfree(DatumGetPointer(ret));
-					ret = tmp;
-				}
 				array_state = accumArrayResult(
 					array_state,
 					ret ? ret : v, false, TEXTOID,
@@ -567,11 +611,6 @@ Datum regexp_replace_rand_array_noopt(PG_FUNCTION_ARGS)
 				}
 			}
 			ret = apply_textregexreplace_noopt(fcinfo,&matched,false,keep_empty);
-			if(values) {
-				tmp = replace_placeholders(ret ? ret : v, values);
-				if(ret) pfree(DatumGetPointer(ret));
-				ret = tmp;
-			}
 			array_state = accumArrayResult(
 				array_state,
 				ret ? ret : v, false, TEXTOID,
@@ -580,9 +619,19 @@ Datum regexp_replace_rand_array_noopt(PG_FUNCTION_ARGS)
 	}
 
 	if(ret) pfree(DatumGetPointer(ret));
-	if(replaced) pfree(t);
 	if(rule_chunk) pfree(rule_chunk);
 	if(result_chunk) pfree(result_chunk);
+
+	//restore fcinfo
+	PG_GETARG_DATUM(ARG_IN) = orig_in;
+	if(orig_rule) {
+		pfree(PG_GETARG_POINTER(ARG_RULE));
+		PG_GETARG_DATUM(ARG_RULE) = orig_rule;
+	}
+	if(orig_result) {
+		pfree(PG_GETARG_POINTER(ARG_RESULT));
+		PG_GETARG_DATUM(ARG_RESULT) = orig_result;
+	}
 
 	return makeArrayResult(array_state, CurrentMemoryContext);
 }
